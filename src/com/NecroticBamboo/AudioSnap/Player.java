@@ -9,7 +9,6 @@ import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.UnsupportedAudioFileException;
-import javax.swing.*;
 import java.io.File;
 import java.io.IOException;
 
@@ -28,25 +27,26 @@ public class Player {
 
     private double currentTime;
     private double pausedAt;
-    private String state="";
-    private ICallBack callBack;
-    private boolean loop=false;
+    private String state = "";
+    private final IPlayerCallBack callBack;
+    private boolean loop = false;
+
+    private int tempo = 100;
+    private final int sequenceModel = 82;
+    private final int windowModel = 28;
+    private final int overlapModel = 12;
 
 
-    public Player(File fileIn,FileManipulation fileManipulationIn,GraphPanel graphPanelIn,ICallBack callBackIn){
-        file=fileIn;
-        fileManipulation=fileManipulationIn;
-        graphPanel=graphPanelIn;
-        callBack=callBackIn;
+    public Player(File fileIn, FileManipulation fileManipulationIn, GraphPanel graphPanelIn, IPlayerCallBack callBackIn) {
+        file = fileIn;
+        fileManipulation = fileManipulationIn;
+        graphPanel = graphPanelIn;
+        callBack = callBackIn;
     }
 
-    public void playFile(){
-        playFile(pausedAt,0);
-    }
-
-    public void playFile(double startTime,double endTime) {
+    public void playFile(double startTime, double endTime) {
         try {
-            if(!state.equals("playing")) {
+            if (!state.equals("playing")) {
 
                 currentTime = 0;
                 state = "playing";
@@ -55,8 +55,6 @@ public class Player {
 
                 rateTransposer = new RateTransposer(fileManipulation.getFactor());
                 audioPlayer = new AudioPlayer(format);
-
-//            JVMAudioInputStream test=new JVMAudioInputStream(new AudioInputStream((TargetDataLine) file));
 
                 if (format.getChannels() != 1) {
                     dispatcher = AudioDispatcherFactory.fromFile(file, wsola.getInputBufferSize() * format.getChannels(), wsola.getOverlap() * format.getChannels());
@@ -68,16 +66,17 @@ public class Player {
                 processor = new SoundLevelDetector(graphPanel);
 
                 wsola.setDispatcher(dispatcher);
+                syncTempo();
+
                 dispatcher.skip(startTime);
                 dispatcher.addAudioProcessor(new AudioProcessor() {
                     @Override
                     public boolean process(AudioEvent audioEvent) {
                         currentTime = audioEvent.getTimeStamp();
-                        if(Math.round(currentTime) == endTime){
+                        if (Math.round(currentTime) == endTime) {
                             pauseFile();
-                        }
-                        else{
-                            callBack.callBack((int) currentTime);
+                        } else {
+                            callBack.onPlayed((int) currentTime);
                         }
                         return true;
                     }
@@ -87,8 +86,11 @@ public class Player {
                         if (state.equals("playing")) {
                             state = "stopped";
                         }
-                        if(loop){
-                            playFile(startTime,endTime);
+                        if (loop) {
+//                            setTempo(tempo);
+                            playFile(startTime, endTime);
+                        } else {
+                            callBack.onStop();
                         }
                     }
                 });
@@ -114,34 +116,48 @@ public class Player {
         }
     }
 
-    public void stopFile(){
-        if(state.equals("playing") || state.equals("paused")){
-            state="stopped";
-            currentTime=0;
-            pausedAt=0;
-            loop=false;
+    public void stopFile() {
+        if (state.equals("playing") || state.equals("paused")) {
+            state = "stopped";
+            currentTime = 0;
+            pausedAt = 0;
+            loop = false;
             dispatcher.stop();
         }
     }
 
-    public void pauseFile(){
-        if(state.equals("playing")){
-            state="paused";
+    public void pauseFile() {
+        if (state.equals("playing")) {
+            state = "paused";
             pauseFile(currentTime);
         }
     }
 
-    private void pauseFile(double time){
-        pausedAt=time;
+    private void pauseFile(double time) {
+        pausedAt = time;
         dispatcher.stop();
     }
 
-    public double getPausedAt(){
+    public void setLoop(boolean state) {
+        loop = state;
+    }
+
+    public boolean getLoop() {
+        return loop;
+    }
+
+    public double getPausedAt() {
         return pausedAt;
     }
 
-    public void loopPart(boolean loopIn,double startTime,double endTime){
-        loop=loopIn;
-        playFile(startTime,endTime);
+    public void setTempo(int tempoIn) {
+        tempo = tempoIn;
+        syncTempo();
+    }
+
+    private void syncTempo() {
+        if (dispatcher != null) {
+            wsola.setParameters(new WaveformSimilarityBasedOverlapAdd.Parameters(tempo / 100.0, 44100, sequenceModel, windowModel, overlapModel));
+        }
     }
 }

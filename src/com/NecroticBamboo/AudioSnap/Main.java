@@ -2,16 +2,18 @@ package com.NecroticBamboo.AudioSnap;
 
 
 import javax.swing.*;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
 
-public class Main implements ActionListener {
+public class Main implements ActionListener,IPlayerCallBack {
 
-    private File file;
-//    private File file = new File("C:\\Users\\andre\\IdeaProjects\\AudioSnap\\AudioFiles\\tom_stillalive.wav");
+    //    private File file;
+    private File file = new File("C:\\Users\\andre\\IdeaProjects\\AudioSnap\\AudioFiles\\tom_stillalive.wav");
 //    private final File MP3File = new File("C:\\Users\\andre\\IdeaProjects\\AudioSnap\\AudioFiles\\battlehymnoftherepublic.mp3");
 
 
@@ -19,13 +21,16 @@ public class Main implements ActionListener {
     private final Icon stopIcon = new ImageIcon("ButtonIcons\\StopIcon.png");
     private final Icon pauseIcon = new ImageIcon("ButtonIcons\\PauseIcon.png");
     private final Icon loopIcon = new ImageIcon("ButtonIcons\\LoopIcon.png");
+    private final Icon stopLoopIcon=new ImageIcon("ButtonIcons\\stopLoopIcon.png");
 
     private FileManipulation fileManipulation;
     private Player audioPlayer;
     private final JFrame frame = new JFrame("AudioSnap");
     private final JPanel playerPanel = new JPanel();
     private JTextArea max;
+    private SliderListener sliderListener;
     private JSlider audioSlider;
+    private JSlider tempoSlider;
     private RangeSlider rangeSlider;
 
     private double startAt;
@@ -39,7 +44,12 @@ public class Main implements ActionListener {
     private final DefaultListModel<String> commands = new DefaultListModel<>();
     private int commandPosition = 1;
     private GraphPanel graphPanel;
-    private ICallBack callBack;
+
+    private JPanel PlayPausePanel;
+    private CardLayout PausePlayLayout;
+    private JPanel MakeStopLoop;
+    private CardLayout LoopLayout;
+
 
     public static void main(String[] args) {
         Main a = new Main();
@@ -49,7 +59,7 @@ public class Main implements ActionListener {
     public void showGUI() {
 
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(420, 500);
+        frame.setSize(420, 550);
 
         //Creating the MenuBar and adding components
         JMenuBar mb = new JMenuBar();
@@ -115,7 +125,7 @@ public class Main implements ActionListener {
 
 //        fileManipulation = new FileManipulation(file);
         createPlayerJFrame(topPanel);
-//        audioPlayer = new Player(file, fileManipulation, graphPanel, callBack);
+//        audioPlayer = new Player(file, fileManipulation, graphPanel, this);
 
         JScrollPane scrollPane = new JScrollPane();
         scrollPane.setViewportView(list);
@@ -149,6 +159,9 @@ public class Main implements ActionListener {
             switch (event) {
                 case "play":
                     addCommandToList(": Playing file");
+                    audioPlayer.setTempo(tempoSlider.getValue());
+                    PausePlayLayout.show(PlayPausePanel, "Pause");
+
 //                    System.out.println(rangeSlider.getValue()+" "+rangeSlider.getUpperValue());
                     if (rangeSlider.getValue() == 0 && rangeSlider.getUpperValue() == fileManipulation.getFileLengthInSeconds()) {
                         audioPlayer.playFile(audioPlayer.getPausedAt(), fileManipulation.getFileLengthInSeconds() + 1);
@@ -157,27 +170,49 @@ public class Main implements ActionListener {
                         endAt = rangeSlider.getUpperValue();
                         audioPlayer.playFile(startAt, endAt);
                     }
+//                    PausePlayLayout.show(PlayPausePanel, "PLay");
                     break;
                 case "stop":
                     addCommandToList(": Stopping file");
-                    loop=false;
+                    PausePlayLayout.show(PlayPausePanel,"Play");
+                    LoopLayout.show(MakeStopLoop,"MakeLoop");
+                    loop = false;
+
+                    tempoSlider.setValue(100);
+                    rangeSlider.setValue(0);
+                    rangeSlider.setUpperValue(rangeSlider.getMaximum());
+
                     audioPlayer.stopFile();
                     break;
                 case "pause":
                     addCommandToList(": Pausing file");
-                    loop=false;
-                    audioPlayer.pauseFile();
+                    PausePlayLayout.show(PlayPausePanel, "Play");
+//                    loop=false;
+                    if (loop) {
+//                        loop = false;
+                        audioPlayer.stopFile();
+                    } else {
+                        audioPlayer.pauseFile();
+                    }
+
                     break;
                 case "information":
                     addCommandToList(": Displaying information");
                     JOptionPane.showMessageDialog(null, fileManipulation.showInformation());
                     break;
                 case "loop":
-                    addCommandToList(": Making a loop");
-                    startAt = rangeSlider.getValue();
-                    endAt = rangeSlider.getUpperValue();
                     loop = !loop;
-                    audioPlayer.loopPart(loop,startAt,endAt);
+                    if(loop){
+                        LoopLayout.show(MakeStopLoop,"StopLoop");
+                    } else LoopLayout.show(MakeStopLoop,"MakeLoop");
+                    audioPlayer.setLoop(loop);
+                    if (audioPlayer.getLoop()) {
+                        addCommandToList(": Making a loop");
+                    } else addCommandToList(": Stopping a loop");
+
+//                    startAt = rangeSlider.getValue();
+//                    endAt = rangeSlider.getUpperValue();
+//                    audioPlayer.loopPart(loop,startAt,endAt);
 
                     break;
                 case "makeEcho":
@@ -204,6 +239,21 @@ public class Main implements ActionListener {
 
     }
 
+    public void onPlayed(int timeStamp){
+//        PausePlayLayout.show(PlayPausePanel,"Pause");
+        try{
+            sliderListener.mute(true);
+            audioSlider.setValue(timeStamp);
+            audioSlider.repaint();
+        } finally {
+            sliderListener.mute(false);
+        }
+    }
+
+    public void onStop(){
+        PausePlayLayout.show(PlayPausePanel,"Play");
+    }
+
     private void addCommandToList(String s) {
         commands.addElement(commandPosition + s);
         commandPosition++;
@@ -222,12 +272,18 @@ public class Main implements ActionListener {
             fileManipulation = new FileManipulation(new File(file.getAbsolutePath()));
             int maximum = (int) fileManipulation.getFileLengthInSeconds();
 
-            audioPlayer = new Player(new File(file.getAbsolutePath()), fileManipulation, graphPanel, callBack);
+            audioPlayer = new Player(new File(file.getAbsolutePath()), fileManipulation, graphPanel, this);
             max.setText("" + maximum);
+            tempoSlider.setValue(100);
+            tempoSlider.setEnabled(true);
+
             rangeSlider.setMaximum(maximum);
             rangeSlider.setUpperValue(maximum);
+            rangeSlider.setEnabled(true);
+
             audioSlider.setMaximum(maximum);
             audioSlider.setValue(0);
+            audioSlider.setEnabled(true);
         }
     }
 
@@ -239,14 +295,70 @@ public class Main implements ActionListener {
             seconds = 0;
         } else seconds = fileManipulation.getFileLengthInSeconds();
 
-//        System.out.println(seconds);
+        JPanel tempoSliderPanel = createTempoPanel();
+        JPanel sliderPanel = createSliderPanel((int) seconds, tempoSliderPanel);
+        JPanel mainRangeSliderPanel = createRangeSliderPanel();
+        JPanel ButtonPanel = createButtonPanel();
+
+        playerPanelIn.add(sliderPanel);
+        playerPanelIn.add(mainRangeSliderPanel);
+        playerPanelIn.add(ButtonPanel);
+    }
+
+    private JPanel createSliderPanel(int seconds, JPanel tempoSliderPanel) {
+        //        System.out.println(seconds);
         JPanel sliderPanel = new JPanel();
-        audioSlider = new JSlider(0, (int) seconds);
+        audioSlider = new JSlider(0, seconds);
         audioSlider.setValue(0);
 
-        SliderListener sliderListener = new SliderListener(audioPlayer, audioSlider);
+        sliderListener = new SliderListener(audioPlayer, audioSlider);
         audioSlider.addChangeListener(sliderListener);
+        audioSlider.setEnabled(false);
 
+        JTextArea min = new JTextArea();
+        min.setEditable(false);
+        max = new JTextArea(1, 3);
+        max.setEditable(false);
+
+        min.setText("0");
+        max.setText("" + seconds);
+
+        sliderPanel.add(min);
+        sliderPanel.add(audioSlider);
+        sliderPanel.add(max);
+        sliderPanel.add(tempoSliderPanel);
+        return sliderPanel;
+    }
+
+    private JPanel createTempoPanel() {
+        JPanel tempoSliderPanel = new JPanel();
+        JLabel tempoLabel = new JLabel("Current tempo: ");
+        JTextArea tempoArea = new JTextArea();
+        tempoArea.setText("" + 100);
+        tempoArea.setColumns(2);
+        tempoArea.setEditable(false);
+
+        tempoSlider = new JSlider(20, 250);
+        tempoSlider.setValue(100);
+        tempoSlider.setEnabled(false);
+        tempoSlider.setPaintLabels(true);
+
+        ChangeListener parameterSettingChangedListener;
+        tempoSlider.addChangeListener(parameterSettingChangedListener = new ChangeListener() {
+            @Override
+            public void stateChanged(ChangeEvent e) {
+                audioPlayer.setTempo(tempoSlider.getValue());
+                tempoArea.setText("" + tempoSlider.getValue());
+            }
+        });
+
+        tempoSliderPanel.add(tempoLabel);
+        tempoSliderPanel.add(tempoArea);
+        tempoSliderPanel.add(tempoSlider);
+        return tempoSliderPanel;
+    }
+
+    private JPanel createRangeSliderPanel() {
         rangeSlider = new RangeSlider();
         JLabel rangeSliderLabel1 = new JLabel();
         JLabel rangeSliderValue1 = new JLabel();
@@ -266,6 +378,7 @@ public class Main implements ActionListener {
         rangeSlider.setMinimum(0);
         rangeSlider.setValue(0);
         rangeSlider.setUpperValue(100);
+        rangeSlider.setEnabled(false);
 //        rangeSlider.setMaximum((int) fileManipulation.getFileLengthInSeconds());
 //        rangeSlider.setUpperValue((int) fileManipulation.getFileLengthInSeconds());
 
@@ -276,11 +389,11 @@ public class Main implements ActionListener {
             rangeSliderValue2.setText(String.valueOf(slider.getUpperValue()));
         });
 
-        JPanel mainRangeSliderPanel=new JPanel();
+        JPanel mainRangeSliderPanel = new JPanel();
         JPanel rangeSliderPanel = new JPanel();
-        JPanel rangeSliderLeftTextPanel=new JPanel();
-        JPanel rangeSliderRightTextPanel=new JPanel();
-        JPanel rangeSliderTextPanel=new JPanel();
+        JPanel rangeSliderLeftTextPanel = new JPanel();
+        JPanel rangeSliderRightTextPanel = new JPanel();
+        JPanel rangeSliderTextPanel = new JPanel();
         rangeSliderLeftTextPanel.add(rangeSliderLabel1, new GridBagConstraints(0, 0, 1, 1, 0.0, 0.0,
                 GridBagConstraints.NORTHWEST, GridBagConstraints.NONE, new Insets(0, 0, 3, 3), 0, 0));
         rangeSliderLeftTextPanel.add(rangeSliderValue1, new GridBagConstraints(1, 0, 1, 1, 0.0, 0.0,
@@ -292,17 +405,25 @@ public class Main implements ActionListener {
         rangeSliderPanel.add(rangeSlider, new GridBagConstraints(0, 2, 2, 1, 0.0, 0.0,
                 GridBagConstraints.NORTHWEST, GridBagConstraints.NONE, new Insets(0, 0, 0, 0), 0, 0));
 
-        JTextArea min = new JTextArea();
-        min.setEditable(false);
-        max = new JTextArea(1, 3);
-        max.setEditable(false);
+        mainRangeSliderPanel.setLayout(new BoxLayout(mainRangeSliderPanel, BoxLayout.Y_AXIS));
 
-        min.setText("0");
-        max.setText("" + (int) seconds);
+        rangeSliderTextPanel.setLayout(new BoxLayout(rangeSliderTextPanel, BoxLayout.X_AXIS));
+        rangeSliderTextPanel.add(rangeSliderLeftTextPanel);
+        rangeSliderTextPanel.add(rangeSliderRightTextPanel);
 
-        callBack = new CallBack(audioSlider, sliderListener);
+        mainRangeSliderPanel.add(rangeSliderTextPanel);
+        mainRangeSliderPanel.add(rangeSliderPanel);
+        return mainRangeSliderPanel;
+    }
 
+    private JPanel createButtonPanel() {
         JPanel ButtonPanel = new JPanel();
+        PlayPausePanel = new JPanel(new CardLayout());
+        PausePlayLayout = (CardLayout) PlayPausePanel.getLayout();
+
+        MakeStopLoop=new JPanel(new CardLayout());
+        LoopLayout=(CardLayout) MakeStopLoop.getLayout();
+
         JButton play = new JButton(playIcon);
         play.setActionCommand("play");
         play.addActionListener(this);
@@ -319,27 +440,24 @@ public class Main implements ActionListener {
         loop.setActionCommand("loop");
         loop.addActionListener(this);
 
-        sliderPanel.add(min);
-        sliderPanel.add(audioSlider);
-        sliderPanel.add(max);
+        JButton stopLoop = new JButton(stopLoopIcon);
+        stopLoop.setActionCommand("loop");
+        stopLoop.addActionListener(this);
 
-        mainRangeSliderPanel.setLayout(new BoxLayout(mainRangeSliderPanel,BoxLayout.Y_AXIS));
+        PlayPausePanel.add(play, "Play");
+        PlayPausePanel.add(pause, "Pause");
+        PausePlayLayout.show(PlayPausePanel, "Play");
 
-        rangeSliderTextPanel.setLayout(new BoxLayout(rangeSliderTextPanel,BoxLayout.X_AXIS));
-        rangeSliderTextPanel.add(rangeSliderLeftTextPanel);
-        rangeSliderTextPanel.add(rangeSliderRightTextPanel);
+        MakeStopLoop.add(loop,"MakeLoop");
+        MakeStopLoop.add(stopLoop,"StopLoop");
+        LoopLayout.show(MakeStopLoop,"MakeLoop");
 
-        mainRangeSliderPanel.add(rangeSliderTextPanel);
-        mainRangeSliderPanel.add(rangeSliderPanel);
-
-        ButtonPanel.add(pause);
+//        ButtonPanel.add(pause);
         ButtonPanel.add(stop);
-        ButtonPanel.add(loop);
-        ButtonPanel.add(play);
-
-        playerPanelIn.add(sliderPanel);
-        playerPanelIn.add(mainRangeSliderPanel);
-        playerPanelIn.add(ButtonPanel);
+        ButtonPanel.add(MakeStopLoop);
+        ButtonPanel.add(PlayPausePanel);
+//        ButtonPanel.add(play);
+        return ButtonPanel;
     }
 
     private double changeFactorOrVolume(String message) {
